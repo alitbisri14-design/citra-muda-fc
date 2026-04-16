@@ -1,0 +1,51 @@
+@import "tailwindcss";
+
+@theme {
+  --color-electric-green: #39FF14;
+  --color-dark-bg: #0A0A0A;
+  --color-glass: rgba(255, 255, 255, 0.05);
+  --color-glass-border: rgba(255, 255, 255, 0.1);
+}
+
+@layer utilities {
+  .glass {
+    @apply bg-[var(--color-glass)] backdrop-blur-md border border-[var(--color-glass-border)] shadow-xl;
+  }
+  
+  .glass-hover {
+    @apply hover:bg-[rgba(255,255,255,0.08)] transition-all duration-300;
+  }
+
+  .text-glow {
+    text-shadow: 0 0 10px rgba(57, 255, 20, 0.5);
+  }
+}
+
+body {
+  @apply bg-[var(--color-dark-bg)] text-white font-sans antialiased;
+}
+
+/* Select element styling */
+select {
+  color-scheme: dark;
+  background-color: rgba(255, 255, 255, 0.1) !important;
+  color: white !important;
+}
+
+select option {
+  background-color: #1a1a2e !important;
+  color: white !important;
+  padding: 8px !important;
+}
+
+select option:hover {
+  background: linear-gradient(#39FF14, #39FF14) !important;
+  background-color: #39FF14 !important;
+  color: #0A0A0A !important;
+}
+
+select:focus {
+  outline: none;
+  border-color: rgba(57, 255, 20, 0.5) !important;
+  box-shadow: 0 0 10px rgba(57, 255, 20, 0.2);
+}

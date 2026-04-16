@@ -1,0 +1,5 @@
+{
+  "name": "Citra Muda FC Management",
+  "description": "Aplikasi manajemen klub sepak bola profesional Citra Muda FC dengan fitur dasbor, roster pemain, jadwal pertandingan, kas, struktur organisasi, dan presensi publik.",
+  "requestFramePermissions": []
+}
