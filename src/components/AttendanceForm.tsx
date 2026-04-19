@@ -3,11 +3,8 @@ import { ClipboardCheck, User, Send, Clock, Trash2, Edit2, X } from 'lucide-reac
 import { motion, AnimatePresence } from 'motion/react';
 import { Attendance } from '../types';
 import { cn, titleCase } from '../lib/utils';
-import {
-  deleteAttendanceFromSupabase,
-  loadAttendancesFromSupabase,
-  saveAttendanceToSupabase
-} from '../lib/supabaseAttendance';
+import { deleteAttendance, loadAttendances, saveAttendance } from '../lib/attendanceApi';
+import { subscribeAttendanceRealtime } from '../lib/supabaseRealtime';
 
 interface AttendanceFormProps {
   isAdmin: boolean;
@@ -56,7 +53,7 @@ const AttendanceForm: React.FC<AttendanceFormProps> = ({ isAdmin }) => {
       timestamp: new Date().toISOString(),
     };
 
-    const isSavedToSupabase = await saveAttendanceToSupabase(newAttendance);
+    const isSavedToSupabase = await saveAttendance(newAttendance);
     setAttendees(prev => [newAttendance, ...prev]);
     setName('');
     setSubmitMessage(
@@ -65,7 +62,7 @@ const AttendanceForm: React.FC<AttendanceFormProps> = ({ isAdmin }) => {
         : 'Kehadiran disimpan lokal. Supabase belum terhubung atau gagal menyimpan.'
     );
     if (isSavedToSupabase) {
-      const supabaseAttendances = await loadAttendancesFromSupabase();
+      const supabaseAttendances = await loadAttendances();
       if (supabaseAttendances) {
         setAttendees(supabaseAttendances);
         setSyncMessage(`Sinkron terakhir: ${new Date().toLocaleTimeString('id-ID')}`);
@@ -75,9 +72,9 @@ const AttendanceForm: React.FC<AttendanceFormProps> = ({ isAdmin }) => {
   };
 
   const removeAttendance = async (id: string) => {
-    const deletedFromSupabase = await deleteAttendanceFromSupabase(id);
+    const deletedFromSupabase = await deleteAttendance(id);
     if (!deletedFromSupabase) {
-      setSubmitMessage('Hapus di Supabase gagal, data hanya terhapus di perangkat ini.');
+        setSubmitMessage('Hapus di server gagal, data hanya terhapus di perangkat ini.');
     }
     setAttendees(prev => prev.filter(a => a.id !== id));
   };
@@ -106,11 +103,11 @@ const AttendanceForm: React.FC<AttendanceFormProps> = ({ isAdmin }) => {
     let isMounted = true;
 
     const syncAttendances = async (showStatus = false) => {
-      const supabaseAttendances = await loadAttendancesFromSupabase();
+      const serverAttendances = await loadAttendances();
       if (!isMounted) return;
 
-      if (supabaseAttendances) {
-        setAttendees(supabaseAttendances);
+      if (serverAttendances) {
+        setAttendees(serverAttendances);
         if (showStatus) {
           setSyncMessage(`Sinkron terakhir: ${new Date().toLocaleTimeString('id-ID')}`);
         }
@@ -120,7 +117,14 @@ const AttendanceForm: React.FC<AttendanceFormProps> = ({ isAdmin }) => {
     };
 
     syncAttendances(true);
-    const intervalId = window.setInterval(() => syncAttendances(true), 10000);
+    const unsubscribeRealtime = subscribeAttendanceRealtime({
+      onChange: () => {
+        syncAttendances(true);
+      },
+      onStatus: (status) => {
+        setSyncMessage(status);
+      }
+    });
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         syncAttendances(true);
@@ -130,7 +134,7 @@ const AttendanceForm: React.FC<AttendanceFormProps> = ({ isAdmin }) => {
 
     return () => {
       isMounted = false;
-      window.clearInterval(intervalId);
+      unsubscribeRealtime();
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, []);
