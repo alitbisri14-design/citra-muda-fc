@@ -7,7 +7,7 @@ dotenv.config();
 const app = express();
 app.use(express.json());
 
-const ALLOWED_ORIGIN = 'http://localhost:3000';
+const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN ?? 'http://localhost:3000';
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', ALLOWED_ORIGIN);
   res.header('Access-Control-Allow-Headers', 'Content-Type');
@@ -15,7 +15,7 @@ app.use((req, res, next) => {
   next();
 });
 
-const adminEmail = 'cmudafc@gmail.com';
+const adminEmail = (process.env.ADMIN_EMAIL ?? '').trim().toLowerCase();
 const otpStore = new Map<string, { otp: string; expiresAt: number }>();
 
 const smtpHost = process.env.SMTP_HOST;
@@ -45,6 +45,10 @@ app.post('/send-otp', async (req, res) => {
 
   if (!email || typeof email !== 'string') {
     return res.status(400).json({ message: 'Email tidak valid.' });
+  }
+
+  if (!adminEmail) {
+    return res.status(500).json({ message: 'ADMIN_EMAIL belum dikonfigurasi di server.' });
   }
 
   if (email.trim().toLowerCase() !== adminEmail) {

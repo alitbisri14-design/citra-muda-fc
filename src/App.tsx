@@ -21,8 +21,8 @@ export default function App() {
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
 
-  const adminEmail = 'cmudafc@gmail.com';
-  const adminPassword = 'CitraMudaFc123GO';
+  const adminEmail = import.meta.env.VITE_ADMIN_EMAIL ?? '';
+  const adminPassword = import.meta.env.VITE_ADMIN_PASSWORD ?? '';
 
   useEffect(() => {
     const savedAdmin = localStorage.getItem('citramudafc_admin_logged_in');
@@ -39,8 +39,14 @@ export default function App() {
 
   const handleLogin = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+
+    if (!adminEmail || !adminPassword) {
+      setLoginError('Konfigurasi admin belum lengkap. Periksa VITE_ADMIN_EMAIL dan VITE_ADMIN_PASSWORD.');
+      return;
+    }
+
     if (
-      loginEmail.trim().toLowerCase() === adminEmail &&
+      loginEmail.trim().toLowerCase() === adminEmail.trim().toLowerCase() &&
       loginPassword === adminPassword
     ) {
       setIsAdmin(true);
@@ -147,7 +153,7 @@ export default function App() {
                       value={loginEmail}
                       onChange={(e) => setLoginEmail(e.target.value)}
                       className="w-full bg-white/10 border border-white/10 rounded-xl py-3 px-4 text-white focus:outline-none focus:border-electric-green/50 transition-colors"
-                      placeholder={adminEmail}
+                      placeholder="Masukkan email admin"
                       required
                     />
                   </div>
