@@ -27,6 +27,20 @@ export const saveAttendanceToSupabase = async (attendance: Attendance): Promise<
   return response.ok;
 };
 
+export const deleteAttendanceFromSupabase = async (id: string): Promise<boolean> => {
+  if (!isSupabaseConfigured) return false;
+
+  const response = await fetch(`${supabaseUrl}/rest/v1/${attendanceTable}?id=eq.${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: {
+      ...getHeaders(),
+      Prefer: 'return=minimal',
+    },
+  });
+
+  return response.ok;
+};
+
 export const loadAttendancesFromSupabase = async (): Promise<Attendance[] | null> => {
   if (!isSupabaseConfigured) return null;
 

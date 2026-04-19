@@ -3,7 +3,11 @@ import { ClipboardCheck, User, Send, Clock, Trash2, Edit2, X } from 'lucide-reac
 import { motion, AnimatePresence } from 'motion/react';
 import { Attendance } from '../types';
 import { cn, titleCase } from '../lib/utils';
-import { loadAttendancesFromSupabase, saveAttendanceToSupabase } from '../lib/supabaseAttendance';
+import {
+  deleteAttendanceFromSupabase,
+  loadAttendancesFromSupabase,
+  saveAttendanceToSupabase
+} from '../lib/supabaseAttendance';
 
 interface AttendanceFormProps {
   isAdmin: boolean;
@@ -27,6 +31,7 @@ const AttendanceForm: React.FC<AttendanceFormProps> = ({ isAdmin }) => {
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitMessage, setSubmitMessage] = useState('');
+  const [syncMessage, setSyncMessage] = useState('');
   const [trainingSchedule, setTrainingSchedule] = useState<{ days: string; time: string }>(() => {
     try {
       const saved = localStorage.getItem('citramudafc_training_schedule');
@@ -52,18 +57,29 @@ const AttendanceForm: React.FC<AttendanceFormProps> = ({ isAdmin }) => {
     };
 
     const isSavedToSupabase = await saveAttendanceToSupabase(newAttendance);
-    setAttendees([newAttendance, ...attendees]);
+    setAttendees(prev => [newAttendance, ...prev]);
     setName('');
     setSubmitMessage(
       isSavedToSupabase
         ? 'Kehadiran berhasil disimpan ke Supabase.'
         : 'Kehadiran disimpan lokal. Supabase belum terhubung atau gagal menyimpan.'
     );
+    if (isSavedToSupabase) {
+      const supabaseAttendances = await loadAttendancesFromSupabase();
+      if (supabaseAttendances) {
+        setAttendees(supabaseAttendances);
+        setSyncMessage(`Sinkron terakhir: ${new Date().toLocaleTimeString('id-ID')}`);
+      }
+    }
     setIsSubmitting(false);
   };
 
-  const removeAttendance = (id: string) => {
-    setAttendees(attendees.filter(a => a.id !== id));
+  const removeAttendance = async (id: string) => {
+    const deletedFromSupabase = await deleteAttendanceFromSupabase(id);
+    if (!deletedFromSupabase) {
+      setSubmitMessage('Hapus di Supabase gagal, data hanya terhapus di perangkat ini.');
+    }
+    setAttendees(prev => prev.filter(a => a.id !== id));
   };
 
   const handleEditSchedule = () => {
@@ -87,14 +103,36 @@ const AttendanceForm: React.FC<AttendanceFormProps> = ({ isAdmin }) => {
   }, [attendees]);
 
   useEffect(() => {
-    const syncAttendances = async () => {
+    let isMounted = true;
+
+    const syncAttendances = async (showStatus = false) => {
       const supabaseAttendances = await loadAttendancesFromSupabase();
-      if (supabaseAttendances && supabaseAttendances.length > 0) {
+      if (!isMounted) return;
+
+      if (supabaseAttendances) {
         setAttendees(supabaseAttendances);
+        if (showStatus) {
+          setSyncMessage(`Sinkron terakhir: ${new Date().toLocaleTimeString('id-ID')}`);
+        }
+      } else if (showStatus) {
+        setSyncMessage('Sinkron gagal. Saat ini memakai data lokal.');
       }
     };
 
-    syncAttendances();
+    syncAttendances(true);
+    const intervalId = window.setInterval(() => syncAttendances(true), 10000);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        syncAttendances(true);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      isMounted = false;
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, []);
 
   useEffect(() => {
@@ -262,9 +300,12 @@ const AttendanceForm: React.FC<AttendanceFormProps> = ({ isAdmin }) => {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <h3 className="text-xl font-bold">Daftar Hadir Hari Ini</h3>
-          <span className="px-3 py-1 bg-white/5 rounded-full text-xs font-bold text-white/40">
-            {attendees.length} Orang
-          </span>
+          <div className="text-right">
+            <span className="px-3 py-1 bg-white/5 rounded-full text-xs font-bold text-white/40">
+              {attendees.length} Orang
+            </span>
+            {syncMessage && <p className="text-[10px] text-white/40 mt-1">{syncMessage}</p>}
+          </div>
         </div>
 
         <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2 no-scrollbar">
