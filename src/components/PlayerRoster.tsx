@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { MOCK_PLAYERS } from '../mockData';
 import { TeamCategory, Position, Player, Formation } from '../types';
 import { cn, titleCase, capitalizeInput } from '../lib/utils';
+import { loadPlayers, savePlayers } from '../lib/syncApi';
 
 interface PlayerRosterProps {
   isAdmin: boolean;
@@ -45,6 +46,7 @@ const PlayerRoster: React.FC<PlayerRosterProps> = ({ isAdmin }) => {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingPlayer, setEditingPlayer] = useState<Player | null>(null);
+  const [syncMessage, setSyncMessage] = useState('');
   const [newPlayer, setNewPlayer] = useState({
     name: '',
     position: 'GK' as Position,
@@ -74,7 +76,11 @@ const PlayerRoster: React.FC<PlayerRosterProps> = ({ isAdmin }) => {
         position: newPlayer.position,
         category: newPlayer.category
       };
-      setPlayers([...players, player]);
+      const updatedPlayers = [...players, player];
+      setPlayers(updatedPlayers);
+      savePlayers(updatedPlayers).then((ok) =>
+        setSyncMessage(ok ? `Sinkron server: ${new Date().toLocaleTimeString('id-ID')}` : 'Sinkron server gagal, data tersimpan lokal.')
+      );
       setNewPlayer({ name: '', position: 'GK', category: 'Tim A' });
       setIsAddModalOpen(false);
       window.dispatchEvent(new Event('playersUpdated'));
@@ -100,9 +106,13 @@ const PlayerRoster: React.FC<PlayerRosterProps> = ({ isAdmin }) => {
         category: editPlayer.category
       };
 
-      setPlayers(players.map(p =>
+      const updatedPlayers = players.map(p =>
         p.id === editingPlayer.id ? updatedPlayer : p
-      ));
+      );
+      setPlayers(updatedPlayers);
+      savePlayers(updatedPlayers).then((ok) =>
+        setSyncMessage(ok ? `Sinkron server: ${new Date().toLocaleTimeString('id-ID')}` : 'Sinkron server gagal, data tersimpan lokal.')
+      );
 
       // Update formations if category changed
       if (editingPlayer.category !== editPlayer.category) {
@@ -142,7 +152,11 @@ const PlayerRoster: React.FC<PlayerRosterProps> = ({ isAdmin }) => {
       });
     }
 
-    setPlayers(players.filter(p => p.id !== id));
+    const updatedPlayers = players.filter(p => p.id !== id);
+    setPlayers(updatedPlayers);
+    savePlayers(updatedPlayers).then((ok) =>
+      setSyncMessage(ok ? `Sinkron server: ${new Date().toLocaleTimeString('id-ID')}` : 'Sinkron server gagal, data tersimpan lokal.')
+    );
     window.dispatchEvent(new Event('playersUpdated'));
   };
 
@@ -425,12 +439,25 @@ const PlayerRoster: React.FC<PlayerRosterProps> = ({ isAdmin }) => {
     localStorage.setItem('citramudafc_players', JSON.stringify(players));
   }, [players]);
 
+  useEffect(() => {
+    const syncFromServer = async () => {
+      const serverPlayers = await loadPlayers();
+      if (serverPlayers) {
+        setPlayers(serverPlayers);
+        setSyncMessage(`Sinkron server: ${new Date().toLocaleTimeString('id-ID')}`);
+      }
+    };
+
+    syncFromServer();
+  }, []);
+
   return (
     <div className="space-y-8">
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold text-glow">Daftar Pemain</h2>
           <p className="text-white/50 mt-1">Manajemen roster pemain Citra Muda FC lintas kategori.</p>
+          {syncMessage && <p className="text-[11px] text-white/40 mt-2">{syncMessage}</p>}
         </div>
         {isAdmin && (
           <button 

@@ -3,6 +3,8 @@ import { ClipboardCheck, User, Send, Clock, Trash2, Edit2, X } from 'lucide-reac
 import { motion, AnimatePresence } from 'motion/react';
 import { Attendance } from '../types';
 import { cn, titleCase } from '../lib/utils';
+import { deleteAttendance, loadAttendances, saveAttendance } from '../lib/attendanceApi';
+import { subscribeAttendanceRealtime } from '../lib/supabaseRealtime';
 
 interface AttendanceFormProps {
   isAdmin: boolean;
@@ -25,6 +27,8 @@ const AttendanceForm: React.FC<AttendanceFormProps> = ({ isAdmin }) => {
     }
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitMessage, setSubmitMessage] = useState('');
+  const [syncMessage, setSyncMessage] = useState('');
   const [trainingSchedule, setTrainingSchedule] = useState<{ days: string; time: string }>(() => {
     try {
       const saved = localStorage.getItem('citramudafc_training_schedule');
@@ -36,34 +40,43 @@ const AttendanceForm: React.FC<AttendanceFormProps> = ({ isAdmin }) => {
   const [isEditScheduleOpen, setIsEditScheduleOpen] = useState(false);
   const [editSchedule, setEditSchedule] = useState({ days: trainingSchedule.days, time: trainingSchedule.time });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
 
     setIsSubmitting(true);
-    
-    // Simulate API call
-    setTimeout(() => {
-      const newAttendance: Attendance = {
-        id: Date.now().toString(),
-        name: titleCase(name.trim()),
-        timestamp: new Date().toLocaleString('id-ID', { 
-          year: 'numeric', 
-          month: '2-digit', 
-          day: '2-digit',
-          hour: '2-digit',
-          minute: '2-digit'
-        })
-      };
-      
-      setAttendees([newAttendance, ...attendees]);
-      setName('');
-      setIsSubmitting(false);
-    }, 800);
+    setSubmitMessage('');
+
+    const newAttendance: Attendance = {
+      id: Date.now().toString(),
+      name: titleCase(name.trim()),
+      timestamp: new Date().toISOString(),
+    };
+
+    const isSavedToSupabase = await saveAttendance(newAttendance);
+    setAttendees(prev => [newAttendance, ...prev]);
+    setName('');
+    setSubmitMessage(
+      isSavedToSupabase
+        ? 'Kehadiran berhasil disimpan ke Supabase.'
+        : 'Kehadiran disimpan lokal. Supabase belum terhubung atau gagal menyimpan.'
+    );
+    if (isSavedToSupabase) {
+      const supabaseAttendances = await loadAttendances();
+      if (supabaseAttendances) {
+        setAttendees(supabaseAttendances);
+        setSyncMessage(`Sinkron terakhir: ${new Date().toLocaleTimeString('id-ID')}`);
+      }
+    }
+    setIsSubmitting(false);
   };
 
-  const removeAttendance = (id: string) => {
-    setAttendees(attendees.filter(a => a.id !== id));
+  const removeAttendance = async (id: string) => {
+    const deletedFromSupabase = await deleteAttendance(id);
+    if (!deletedFromSupabase) {
+        setSubmitMessage('Hapus di server gagal, data hanya terhapus di perangkat ini.');
+    }
+    setAttendees(prev => prev.filter(a => a.id !== id));
   };
 
   const handleEditSchedule = () => {
@@ -85,6 +98,46 @@ const AttendanceForm: React.FC<AttendanceFormProps> = ({ isAdmin }) => {
   useEffect(() => {
     localStorage.setItem('citramudafc_attendees', JSON.stringify(attendees));
   }, [attendees]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const syncAttendances = async (showStatus = false) => {
+      const serverAttendances = await loadAttendances();
+      if (!isMounted) return;
+
+      if (serverAttendances) {
+        setAttendees(serverAttendances);
+        if (showStatus) {
+          setSyncMessage(`Sinkron terakhir: ${new Date().toLocaleTimeString('id-ID')}`);
+        }
+      } else if (showStatus) {
+        setSyncMessage('Sinkron gagal. Saat ini memakai data lokal.');
+      }
+    };
+
+    syncAttendances(true);
+    const unsubscribeRealtime = subscribeAttendanceRealtime({
+      onChange: () => {
+        syncAttendances(true);
+      },
+      onStatus: (status) => {
+        setSyncMessage(status);
+      }
+    });
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        syncAttendances(true);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      isMounted = false;
+      unsubscribeRealtime();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('citramudafc_training_schedule', JSON.stringify(trainingSchedule));
@@ -138,6 +191,7 @@ const AttendanceForm: React.FC<AttendanceFormProps> = ({ isAdmin }) => {
                 </>
               )}
             </button>
+            {submitMessage && <p className="text-sm text-white/70">{submitMessage}</p>}
           </form>
           <div className="absolute -right-8 -bottom-8 text-white/5 pointer-events-none">
             <ClipboardCheck size={200} />
@@ -250,9 +304,12 @@ const AttendanceForm: React.FC<AttendanceFormProps> = ({ isAdmin }) => {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <h3 className="text-xl font-bold">Daftar Hadir Hari Ini</h3>
-          <span className="px-3 py-1 bg-white/5 rounded-full text-xs font-bold text-white/40">
-            {attendees.length} Orang
-          </span>
+          <div className="text-right">
+            <span className="px-3 py-1 bg-white/5 rounded-full text-xs font-bold text-white/40">
+              {attendees.length} Orang
+            </span>
+            {syncMessage && <p className="text-[10px] text-white/40 mt-1">{syncMessage}</p>}
+          </div>
         </div>
 
         <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2 no-scrollbar">
@@ -271,7 +328,15 @@ const AttendanceForm: React.FC<AttendanceFormProps> = ({ isAdmin }) => {
                   </div>
                   <div>
                     <p className="font-bold group-hover:text-electric-green transition-colors">{a.name}</p>
-                    <p className="text-[10px] text-white/30 uppercase tracking-widest">{a.timestamp}</p>
+                    <p className="text-[10px] text-white/30 uppercase tracking-widest">
+                      {new Date(a.timestamp).toLocaleString('id-ID', {
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </p>
                   </div>
                 </div>
                 {isAdmin && (

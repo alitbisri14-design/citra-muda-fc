@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { MOCK_MATCHES } from '../mockData';
 import { Match } from '../types';
 import { cn, capitalizeInput } from '../lib/utils';
+import { loadMatches, saveMatches } from '../lib/syncApi';
 
 interface MatchScheduleProps {
   isAdmin: boolean;
@@ -23,6 +24,7 @@ const MatchSchedule: React.FC<MatchScheduleProps> = ({ isAdmin }) => {
       return sortMatchesByDate(MOCK_MATCHES);
     }
   });
+  const [syncMessage, setSyncMessage] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingMatch, setEditingMatch] = useState<Match | null>(null);
@@ -53,6 +55,9 @@ const MatchSchedule: React.FC<MatchScheduleProps> = ({ isAdmin }) => {
       };
       const updatedMatches = sortMatchesByDate([...matches, match]);
       setMatches(updatedMatches);
+      saveMatches(updatedMatches).then((ok) =>
+        setSyncMessage(ok ? `Sinkron server: ${new Date().toLocaleTimeString('id-ID')}` : 'Sinkron server gagal, data tersimpan lokal.')
+      );
       setNewMatch({ opponent: '', date: '', time: '', location: '', isHome: true });
       setIsAddModalOpen(false);
     }
@@ -78,18 +83,37 @@ const MatchSchedule: React.FC<MatchScheduleProps> = ({ isAdmin }) => {
           : m
       ));
       setMatches(updatedMatches);
+      saveMatches(updatedMatches).then((ok) =>
+        setSyncMessage(ok ? `Sinkron server: ${new Date().toLocaleTimeString('id-ID')}` : 'Sinkron server gagal, data tersimpan lokal.')
+      );
       setIsEditModalOpen(false);
       setEditingMatch(null);
     }
   };
 
   const removeMatch = (id: string) => {
-    setMatches(matches.filter(m => m.id !== id));
+    const updatedMatches = matches.filter(m => m.id !== id);
+    setMatches(updatedMatches);
+    saveMatches(updatedMatches).then((ok) =>
+      setSyncMessage(ok ? `Sinkron server: ${new Date().toLocaleTimeString('id-ID')}` : 'Sinkron server gagal, data tersimpan lokal.')
+    );
   };
 
   useEffect(() => {
     localStorage.setItem('citramudafc_matches', JSON.stringify(matches));
   }, [matches]);
+
+  useEffect(() => {
+    const syncFromServer = async () => {
+      const serverData = await loadMatches();
+      if (serverData) {
+        setMatches(sortMatchesByDate(serverData));
+        setSyncMessage(`Sinkron server: ${new Date().toLocaleTimeString('id-ID')}`);
+      }
+    };
+
+    syncFromServer();
+  }, []);
 
   return (
     <div className="space-y-8">
@@ -97,6 +121,7 @@ const MatchSchedule: React.FC<MatchScheduleProps> = ({ isAdmin }) => {
         <div>
           <h2 className="text-3xl font-bold text-glow">Jadwal Pertandingan</h2>
           <p className="text-white/50 mt-1">Daftar agenda pertandingan mendatang Citra Muda FC.</p>
+          {syncMessage && <p className="text-[11px] text-white/40 mt-2">{syncMessage}</p>}
         </div>
         {isAdmin && (
           <button 

@@ -4,6 +4,7 @@ import { motion } from 'motion/react';
 import { MOCK_MATCHES, MOCK_TRANSACTIONS, MOCK_PLAYERS } from '../mockData';
 import { Transaction, Player, MatchScore, TeamCategory } from '../types';
 import { cn } from '../lib/utils';
+import { loadMatches, loadPlayers, loadTransactions } from '../lib/syncApi';
 
 const Dashboard: React.FC = () => {
   // Get transactions from localStorage or fallback to mock data
@@ -58,6 +59,29 @@ const Dashboard: React.FC = () => {
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('playersUpdated', handlePlayersUpdate);
     };
+  }, []);
+
+  useEffect(() => {
+    const syncFromServer = async () => {
+      const [serverTransactions, serverMatches, serverPlayers] = await Promise.all([
+        loadTransactions(),
+        loadMatches(),
+        loadPlayers(),
+      ]);
+
+      if (serverTransactions) setTransactions(serverTransactions);
+      if (serverMatches) setMatches(serverMatches);
+      if (serverPlayers) setPlayers(serverPlayers);
+    };
+
+    syncFromServer();
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        syncFromServer();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, []);
 
   const totalBalance = transactions.reduce((acc, curr) =>
