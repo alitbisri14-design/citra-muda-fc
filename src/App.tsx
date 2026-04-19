@@ -18,11 +18,13 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [loginEmail, setLoginEmail] = useState('');
-  const [loginPassword, setLoginPassword] = useState('');
+  const [loginOtp, setLoginOtp] = useState('');
+  const [isOtpRequested, setIsOtpRequested] = useState(false);
+  const [loginMessage, setLoginMessage] = useState('');
   const [loginError, setLoginError] = useState('');
 
-  const adminEmail = 'cmudafc@gmail.com';
-  const adminPassword = 'CitraMudaFc123GO';
+  const adminEmail = import.meta.env.VITE_ADMIN_EMAIL ?? '';
+  const authApiBaseUrl = import.meta.env.VITE_AUTH_API_BASE_URL ?? 'http://localhost:4000';
 
   useEffect(() => {
     const savedAdmin = localStorage.getItem('citramudafc_admin_logged_in');
@@ -33,26 +35,73 @@ export default function App() {
 
   const resetFormState = () => {
     setLoginEmail('');
-    setLoginPassword('');
+    setLoginOtp('');
+    setIsOtpRequested(false);
+    setLoginMessage('');
     setLoginError('');
   };
 
   const handleLogin = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (
-      loginEmail.trim().toLowerCase() === adminEmail &&
-      loginPassword === adminPassword
-    ) {
-      setIsAdmin(true);
-      localStorage.setItem('citramudafc_admin_logged_in', 'true');
-      setLoginEmail('');
-      setLoginPassword('');
-      setLoginError('');
-      setShowLoginModal(false);
-      resetFormState();
+    void submitLogin();
+  };
+
+  const submitLogin = async () => {
+    setLoginError('');
+    setLoginMessage('');
+
+    if (!adminEmail) {
+      setLoginError('Konfigurasi admin belum lengkap. Periksa VITE_ADMIN_EMAIL.');
       return;
     }
-    setLoginError('Email atau password salah. Silakan coba lagi.');
+
+    if (loginEmail.trim().toLowerCase() !== adminEmail.trim().toLowerCase()) {
+      setLoginError('Email admin tidak sesuai.');
+      return;
+    }
+
+    try {
+      if (!isOtpRequested) {
+        const response = await fetch(`${authApiBaseUrl}/send-otp`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: loginEmail.trim().toLowerCase() }),
+        });
+        const data = (await response.json()) as { message?: string };
+
+        if (!response.ok) {
+          setLoginError(data.message ?? 'Gagal mengirim OTP.');
+          return;
+        }
+
+        setIsOtpRequested(true);
+        setLoginMessage('OTP berhasil dikirim ke email admin. Cek inbox lalu masukkan kodenya.');
+        return;
+      }
+
+      const verifyResponse = await fetch(`${authApiBaseUrl}/verify-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: loginEmail.trim().toLowerCase(),
+          otp: loginOtp.trim(),
+        }),
+      });
+      const verifyData = (await verifyResponse.json()) as { message?: string };
+
+      if (!verifyResponse.ok) {
+        setLoginError(verifyData.message ?? 'OTP tidak valid.');
+        return;
+      }
+
+      setIsAdmin(true);
+      localStorage.setItem('citramudafc_admin_logged_in', 'true');
+      setShowLoginModal(false);
+      resetFormState();
+    } catch (error) {
+      console.error('Login request failed:', error);
+      setLoginError('Tidak bisa terhubung ke server autentikasi.');
+    }
   };
 
   const handleLogout = () => {
@@ -124,7 +173,7 @@ export default function App() {
                 <div className="flex items-center justify-between mb-6">
                   <div>
                     <h2 className="text-2xl font-bold text-glow">Login Admin</h2>
-                    <p className="text-white/60 text-sm">Masuk dengan email dan password untuk akses admin.</p>
+                    <p className="text-white/60 text-sm">Masuk dengan email admin dan verifikasi OTP.</p>
                   </div>
                   <button
                     type="button"
@@ -147,23 +196,27 @@ export default function App() {
                       value={loginEmail}
                       onChange={(e) => setLoginEmail(e.target.value)}
                       className="w-full bg-white/10 border border-white/10 rounded-xl py-3 px-4 text-white focus:outline-none focus:border-electric-green/50 transition-colors"
-                      placeholder={adminEmail}
+                      placeholder="Masukkan email admin"
                       required
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-white/70 mb-2">Password</label>
-                    <input
-                      type="password"
-                      value={loginPassword}
-                      onChange={(e) => setLoginPassword(e.target.value)}
-                      className="w-full bg-white/10 border border-white/10 rounded-xl py-3 px-4 text-white focus:outline-none focus:border-electric-green/50 transition-colors"
-                      placeholder="Masukkan password"
-                      required
-                    />
-                  </div>
+                  {isOtpRequested && (
+                    <div>
+                      <label className="block text-sm font-medium text-white/70 mb-2">Kode OTP</label>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={loginOtp}
+                        onChange={(e) => setLoginOtp(e.target.value)}
+                        className="w-full bg-white/10 border border-white/10 rounded-xl py-3 px-4 text-white focus:outline-none focus:border-electric-green/50 transition-colors"
+                        placeholder="Masukkan 6 digit OTP"
+                        required
+                      />
+                    </div>
+                  )}
 
+                  {loginMessage && <p className="text-sm text-electric-green">{loginMessage}</p>}
                   {loginError && <p className="text-sm text-red-400">{loginError}</p>}
 
                   <div className="flex justify-end gap-3 pt-2">
@@ -182,7 +235,7 @@ export default function App() {
                       type="submit"
                       className="px-5 py-3 rounded-xl bg-electric-green text-black font-bold hover:scale-[1.01] transition-all"
                     >
-                      Masuk
+                      {isOtpRequested ? 'Verifikasi OTP' : 'Kirim OTP'}
                     </button>
                   </div>
                 </form>
