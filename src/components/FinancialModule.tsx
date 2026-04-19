@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { MOCK_TRANSACTIONS } from '../mockData';
 import { Transaction } from '../types';
 import { cn, titleCase } from '../lib/utils';
+import { loadTransactions, saveTransactions } from '../lib/syncApi';
 
 interface FinancialModuleProps {
   isAdmin: boolean;
@@ -40,11 +41,32 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ isAdmin }) => {
     const data = saved ? JSON.parse(saved) : MOCK_TRANSACTIONS;
     return sortTransactionsByDate(data);
   });
+  const [syncMessage, setSyncMessage] = useState('');
 
   // Save to localStorage whenever transactions change
   useEffect(() => {
     localStorage.setItem('citramudafc_transactions', JSON.stringify(transactions));
   }, [transactions]);
+
+  useEffect(() => {
+    const syncFromServer = async () => {
+      const serverData = await loadTransactions();
+      if (serverData) {
+        setTransactions(sortTransactionsByDate(serverData));
+        setSyncMessage(`Sinkron server: ${new Date().toLocaleTimeString('id-ID')}`);
+      }
+    };
+    syncFromServer();
+  }, []);
+
+  const persistTransactions = async (updatedTransactions: Transaction[]) => {
+    const isSaved = await saveTransactions(updatedTransactions);
+    setSyncMessage(
+      isSaved
+        ? `Sinkron server: ${new Date().toLocaleTimeString('id-ID')}`
+        : 'Sinkron server gagal, data tersimpan di perangkat ini.'
+    );
+  };
 
   // Handlers
   const handleAddTransaction = () => {
@@ -59,6 +81,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ isAdmin }) => {
 
       const updatedTransactions = sortTransactionsByDate([...transactions, transaction]);
       setTransactions(updatedTransactions);
+      persistTransactions(updatedTransactions);
 
       // Reset form
       setNewTransaction({
@@ -96,6 +119,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ isAdmin }) => {
         transactions.map(tx => tx.id === editingTransaction.id ? updatedTransaction : tx)
       );
       setTransactions(updatedTransactions);
+      persistTransactions(updatedTransactions);
 
       setIsEditModalOpen(false);
       setEditingTransaction(null);
@@ -105,6 +129,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ isAdmin }) => {
   const removeTransaction = (id: string) => {
     const updatedTransactions = transactions.filter(tx => tx.id !== id);
     setTransactions(updatedTransactions);
+    persistTransactions(updatedTransactions);
   };
 
   const handleResetTransactions = () => {
@@ -112,6 +137,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ isAdmin }) => {
     const confirmReset = window.confirm('Reset semua riwayat transaksi? Ini akan menghapus semua pemasukan dan pengeluaran sebelumnya.');
     if (confirmReset) {
       setTransactions([]);
+      persistTransactions([]);
     }
   };
 
@@ -136,6 +162,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ isAdmin }) => {
         <div>
           <h2 className="text-3xl font-bold text-glow">Kas Keuangan</h2>
           <p className="text-white/50 mt-1">Laporan pemasukan dan pengeluaran Citra Muda FC.</p>
+          {syncMessage && <p className="text-[11px] text-white/40 mt-2">{syncMessage}</p>}
         </div>
         {isAdmin && (
           <button

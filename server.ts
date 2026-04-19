@@ -11,7 +11,7 @@ const ALLOWED_ORIGIN = 'http://localhost:3000';
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', ALLOWED_ORIGIN);
   res.header('Access-Control-Allow-Headers', 'Content-Type');
-  res.header('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS');
+  res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
   next();
 });
 
@@ -26,6 +26,9 @@ const smtpPass = process.env.SMTP_PASS;
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabaseAttendanceTable = process.env.SUPABASE_ATTENDANCE_TABLE ?? 'attendances';
+const supabaseTransactionsTable = process.env.SUPABASE_TRANSACTIONS_TABLE ?? 'transactions';
+const supabaseMatchesTable = process.env.SUPABASE_MATCHES_TABLE ?? 'matches';
+const supabasePlayersTable = process.env.SUPABASE_PLAYERS_TABLE ?? 'players';
 
 const transporter = nodemailer.createTransport({
   host: smtpHost,
@@ -45,6 +48,21 @@ interface AttendancePayload {
   name: string;
   timestamp: string;
 }
+
+type SyncResource = 'transactions' | 'matches' | 'players';
+
+const getTableForResource = (resource: SyncResource) => {
+  switch (resource) {
+    case 'transactions':
+      return supabaseTransactionsTable;
+    case 'matches':
+      return supabaseMatchesTable;
+    case 'players':
+      return supabasePlayersTable;
+    default:
+      return supabaseTransactionsTable;
+  }
+};
 
 const getSupabaseHeaders = () => ({
   apikey: supabaseServiceRoleKey as string,
@@ -143,6 +161,88 @@ app.delete('/attendance/:id', async (req, res) => {
   } catch (error) {
     console.error('Delete attendance failed:', error);
     return res.status(500).json({ message: 'Terjadi kesalahan saat menghapus presensi.' });
+  }
+});
+
+app.get('/sync/:resource', async (req, res) => {
+  if (!isSupabaseConfigured) {
+    return res.status(500).json({ message: 'Supabase belum dikonfigurasi di server.' });
+  }
+
+  const resource = req.params.resource as SyncResource;
+  if (!['transactions', 'matches', 'players'].includes(resource)) {
+    return res.status(400).json({ message: 'Resource tidak didukung.' });
+  }
+
+  const table = getTableForResource(resource);
+  try {
+    const response = await fetch(`${supabaseUrl}/rest/v1/${table}?select=*`, {
+      method: 'GET',
+      headers: getSupabaseHeaders(),
+    });
+
+    if (!response.ok) {
+      return res.status(500).json({ message: `Gagal mengambil data ${resource} dari Supabase.` });
+    }
+
+    const data = await response.json();
+    return res.json(data);
+  } catch (error) {
+    console.error(`Load ${resource} failed:`, error);
+    return res.status(500).json({ message: `Terjadi kesalahan saat mengambil ${resource}.` });
+  }
+});
+
+app.put('/sync/:resource', async (req, res) => {
+  if (!isSupabaseConfigured) {
+    return res.status(500).json({ message: 'Supabase belum dikonfigurasi di server.' });
+  }
+
+  const resource = req.params.resource as SyncResource;
+  if (!['transactions', 'matches', 'players'].includes(resource)) {
+    return res.status(400).json({ message: 'Resource tidak didukung.' });
+  }
+
+  const payload = req.body;
+  if (!Array.isArray(payload)) {
+    return res.status(400).json({ message: 'Payload harus berupa array.' });
+  }
+
+  const table = getTableForResource(resource);
+  try {
+    const clearResponse = await fetch(`${supabaseUrl}/rest/v1/${table}?id=not.is.null`, {
+      method: 'DELETE',
+      headers: {
+        ...getSupabaseHeaders(),
+        Prefer: 'return=minimal',
+      },
+    });
+
+    if (!clearResponse.ok) {
+      return res.status(500).json({ message: `Gagal membersihkan data ${resource} di Supabase.` });
+    }
+
+    if (payload.length === 0) {
+      return res.json({ message: `${resource} berhasil disinkronkan.` });
+    }
+
+    const insertResponse = await fetch(`${supabaseUrl}/rest/v1/${table}`, {
+      method: 'POST',
+      headers: {
+        ...getSupabaseHeaders(),
+        Prefer: 'return=minimal',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!insertResponse.ok) {
+      return res.status(500).json({ message: `Gagal menyimpan data ${resource} ke Supabase.` });
+    }
+
+    return res.json({ message: `${resource} berhasil disinkronkan.` });
+  } catch (error) {
+    console.error(`Sync ${resource} failed:`, error);
+    return res.status(500).json({ message: `Terjadi kesalahan saat sinkron ${resource}.` });
   }
 });
 
